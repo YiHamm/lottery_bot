@@ -1,5 +1,21 @@
 import { verifyKey } from 'discord-interactions';
 
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+async function readRawBody(req) {
+  const chunks = [];
+
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+
+  return Buffer.concat(chunks);
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
@@ -8,8 +24,12 @@ export default async function handler(req, res) {
   const signature = req.headers['x-signature-ed25519'];
   const timestamp = req.headers['x-signature-timestamp'];
 
-  const rawBody =
-    typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+  if (!signature || !timestamp) {
+    return res.status(401).send('Missing signature headers');
+  }
+
+  const rawBodyBuffer = await readRawBody(req);
+  const rawBody = rawBodyBuffer.toString('utf8');
 
   const isValidRequest = verifyKey(
     rawBody,
@@ -22,9 +42,8 @@ export default async function handler(req, res) {
     return res.status(401).send('Bad request signature');
   }
 
-  const interaction = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  const interaction = JSON.parse(rawBody);
 
-  // Discord 驗證 endpoint 時會先送 PING
   if (interaction.type === 1) {
     return res.status(200).json({ type: 1 });
   }
